@@ -269,7 +269,8 @@ class Bootstrap:
             sessions_dir=path("SESSIONS_DIR", data_dir / "sessions"),
             session_name=os.getenv("SESSION_NAME", "account").strip() or "account",
             string_session=os.getenv("TELEGRAM_STRING_SESSION", "").strip(),
-            port=int(os.getenv("PORT", "7860")),
+            # Pterodactyl-style hosts give the allocated port as SERVER_PORT.
+            port=int(os.getenv("PORT") or os.getenv("SERVER_PORT") or "7860"),
             log_level=os.getenv("LOG_LEVEL", "INFO").strip() or "INFO",
             proxy_secret=os.getenv("PROXY_SECRET", "").strip(),
             allow_direct=os.getenv("ALLOW_DIRECT_PANEL", "").strip().lower() in {"1", "true", "yes"},
