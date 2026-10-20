@@ -138,7 +138,9 @@ bloklanishi mumkin. Model nomlari vaqt o'tib o'zgarishi mumkin — ro'yxat:
 
 ## Tuzilma
 ```
-main.py                 ishga tushirish (bot + panel)
+main.py                 bot + FastAPI panel (bitta jarayon)
+flask_app.py            WSGI panel (Flask) - PythonAnywhere Web
+worker.py               faqat bot - PythonAnywhere Always-on task
 login.py                ixtiyoriy: terminal orqali login
 autoreply/
   config.py             sozlamalar sxemasi (panel shu yerdan quriladi)
