@@ -1,7 +1,6 @@
-import asyncio
 from types import SimpleNamespace as NS
 
-from aiohttp.test_utils import TestClient, TestServer
+from fastapi.testclient import TestClient
 
 from autoreply.web.auth import Auth
 from autoreply.web.server import create_app
@@ -28,105 +27,104 @@ def make_ctx(settings, store, boot):
     async def resolve():
         return None
     owner.resolve = resolve
-    bot = NS(replies_sent=0, _pending={}, set_ai_enabled=lambda on: settings.update({"ai_enabled": on}))
+    bot = NS(replies_sent=0, _pending={}, me=None,
+             set_ai_enabled=lambda on: settings.update({"ai_enabled": on}))
     return NS(boot=boot, settings=settings, store=store, llm=llm, tg=FakeTG(), bot=bot, owner=owner,
               auth=Auth(store, boot), backup=None, log_buffer=[], started_at=0)
 
 
-def run(coro):
-    return asyncio.run(coro)
+def client_for(ctx):
+    return TestClient(create_app(ctx))
+
+
+def login(c, password="test-password-123", **kw):
+    return c.post("/api/login", json={"username": "abu", "password": password}, **kw)
 
 
 def test_panel_auth_csrf_and_settings(settings, store, boot):
     ctx = make_ctx(settings, store, boot)
+    with client_for(ctx) as c:
+        r = c.get("/admin", follow_redirects=False)
+        assert r.status_code == 302 and r.headers["location"] == "/"
+        assert c.get("/api/status").status_code == 401
 
-    async def scenario():
-        async with TestClient(TestServer(create_app(ctx))) as c:
-            r = await c.get("/admin", allow_redirects=False)
-            assert r.status == 302 and r.headers["Location"] == "/"
-            assert (await c.get("/api/status")).status == 401
+        assert login(c, "nope").status_code == 401
+        r = login(c)
+        assert r.status_code == 200
+        assert "httponly" in r.headers["set-cookie"].lower()
+        assert "default-src 'self'" in r.headers["content-security-policy"]
 
-            r = await c.post("/api/login", json={"username": "abu", "password": "nope"})
-            assert r.status == 401
-            r = await c.post("/api/login", json={"username": "abu", "password": "test-password-123"})
-            assert r.status == 200
-            assert "HttpOnly" in r.headers["Set-Cookie"]
-            assert "default-src 'self'" in r.headers["Content-Security-Policy"]
+        csrf = c.get("/api/me").json()["csrf"]
 
-            me = await (await c.get("/api/me")).json()
-            csrf = me["csrf"]
+        # POST without the CSRF header is refused
+        r = c.post("/api/settings", json={"values": {"ai_enabled": False}})
+        assert r.status_code == 403
 
-            # POST without the CSRF header is refused
-            r = await c.post("/api/settings", json={"values": {"ai_enabled": False}})
-            assert r.status == 403
+        h = {"X-CSRF-Token": csrf}
+        r = c.post("/api/settings", json={"values": {"ai_enabled": False, "api_hash": ""}}, headers=h)
+        assert r.json()["ok"] and settings.ai_enabled is False
+        assert settings.api_hash == "abcdef"  # empty secret keeps old value
 
-            h = {"X-CSRF-Token": csrf}
-            r = await c.post("/api/settings", json={"values": {"ai_enabled": False, "api_hash": ""}}, headers=h)
-            data = await r.json()
-            assert data["ok"] and settings.ai_enabled is False
-            assert settings.api_hash == "abcdef"  # empty secret keeps old value
+        r = c.post("/api/settings", json={"values": {"api_id": 555}}, headers=h)
+        assert r.json()["restart"] == ["api_id"] and ctx.tg.reconfigured == 1
 
-            r = await c.post("/api/settings", json={"values": {"api_id": 555}}, headers=h)
-            assert (await r.json())["restart"] == ["api_id"] and ctx.tg.reconfigured == 1
+        r = c.post("/api/settings", json={"values": {"post_time": "99:99"}}, headers=h)
+        assert r.status_code == 400
 
-            r = await c.post("/api/settings", json={"values": {"post_time": "99:99"}}, headers=h)
-            assert r.status == 400
+        r = c.post("/api/settings", content=b"not json", headers=h)
+        assert r.status_code == 400 and r.json()["error"] == "JSON kerak"
 
-            data = await (await c.get("/api/settings")).json()
-            assert "sk-or-test" not in str(data["values"])
+        data = c.get("/api/settings").json()
+        assert "sk-or-test" not in str(data["values"])
 
-            r = await c.post("/api/keys/delete", json={"index": 0}, headers=h)
-            assert (await r.json())["ok"] and settings.openrouter_api_keys == []
+        r = c.post("/api/keys/delete", json={"index": 0}, headers=h)
+        assert r.json()["ok"] and settings.openrouter_api_keys == []
 
-            r = await c.get("/assets/admin.js")
-            assert r.status == 200
-            r = await c.get("/admin")
-            assert r.status == 200 and "ai-master" in await r.text()
+        assert c.get("/assets/admin.js").status_code == 200
+        r = c.get("/admin")
+        assert r.status_code == 200 and "ai-master" in r.text
 
-    run(scenario())
+        # no public API docs
+        assert c.get("/docs").status_code in (302, 404)
+        assert c.get("/openapi.json").status_code in (302, 404)
 
 
 def test_login_lockout(settings, store, boot):
     ctx = make_ctx(settings, store, boot)
-
-    async def scenario():
-        async with TestClient(TestServer(create_app(ctx))) as c:
-            for _ in range(5):
-                await c.post("/api/login", json={"username": "abu", "password": "x"})
-            r = await c.post("/api/login", json={"username": "abu", "password": "test-password-123"})
-            assert r.status == 429
-
-    run(scenario())
+    with client_for(ctx) as c:
+        for _ in range(5):
+            login(c, "x")
+        assert login(c).status_code == 429
 
 
 def test_proxy_secret_required_and_client_ip(settings, store, boot):
     boot.proxy_secret = "p-secret"
     ctx = make_ctx(settings, store, boot)
-
-    async def scenario():
-        async with TestClient(TestServer(create_app(ctx))) as c:
-            r = await c.post("/api/login", json={"username": "abu", "password": "test-password-123"})
-            assert r.status == 403  # direct access without the proxy secret
-            h = {"X-Proxy-Secret": "p-secret", "X-Client-IP": "9.9.9.9"}
-            for _ in range(5):
-                await c.post("/api/login", json={"username": "abu", "password": "bad"}, headers=h)
-            assert ctx.auth.locked_for("9.9.9.9") > 0  # lockout keyed on the real client
-            # a spoofed X-Client-IP without the secret is ignored (request refused)
-            r = await c.get("/api/me", headers={"X-Client-IP": "1.2.3.4"})
-            assert r.status == 403
-            assert (await c.get("/healthz")).status == 200
-
-    run(scenario())
+    with client_for(ctx) as c:
+        assert login(c).status_code == 403  # direct access without the proxy secret
+        h = {"X-Proxy-Secret": "p-secret", "X-Client-IP": "9.9.9.9"}
+        for _ in range(5):
+            login(c, "bad", headers=h)
+        assert ctx.auth.locked_for("9.9.9.9") > 0  # lockout keyed on the real client
+        # a spoofed X-Client-IP without the secret is ignored (request refused)
+        assert c.get("/api/me", headers={"X-Client-IP": "1.2.3.4"}).status_code == 403
+        assert c.get("/healthz").json() == {"ok": True}
 
 
 def test_ping_is_public_but_still_needs_proxy_secret(settings, store, boot):
     boot.proxy_secret = "p-secret"
     ctx = make_ctx(settings, store, boot)
+    with client_for(ctx) as c:
+        assert c.get("/api/ping").status_code == 403
+        r = c.get("/api/ping", headers={"X-Proxy-Secret": "p-secret"})
+        assert r.status_code == 200 and r.json()["ok"]
 
-    async def scenario():
-        async with TestClient(TestServer(create_app(ctx))) as c:
-            assert (await c.get("/api/ping")).status == 403
-            r = await c.get("/api/ping", headers={"X-Proxy-Secret": "p-secret"})
-            assert r.status == 200 and (await r.json())["ok"]
 
-    run(scenario())
+def test_photo_upload_validates_type(settings, store, boot):
+    ctx = make_ctx(settings, store, boot)
+    with client_for(ctx) as c:
+        login(c)
+        h = {"X-CSRF-Token": c.get("/api/me").json()["csrf"]}
+        r = c.post("/api/account/photo", files={"photo": ("a.txt", b"hello", "text/plain")}, headers=h)
+        assert r.status_code == 400 and r.json()["error"] == "Faqat JPG yoki PNG"
+        assert c.get("/api/account/photo").status_code == 404

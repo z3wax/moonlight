@@ -145,7 +145,7 @@ autoreply/
   llm.py                OpenRouter: ko'p kalit + model failover, rasm
   persist.py            shifrlangan zaxira (HF dataset)
   storage.py            SQLite
-  web/                  admin panel (aiohttp + HTML/CSS/JS)
+  web/                  admin panel backend (FastAPI + uvicorn)
 deploy/deploy_hf.py     Hugging Face'ga yuklash
 ```
 

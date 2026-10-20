@@ -50,7 +50,9 @@ class Storage:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.on_change = None  # called after settings/chat-state writes
-        self._db = sqlite3.connect(str(path), isolation_level=None)
+        # Shared by the event loop and worker threads (backup, web server);
+        # sqlite serialises access itself, so allow use from any thread.
+        self._db = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA synchronous=NORMAL")
         self._db.executescript(SCHEMA)

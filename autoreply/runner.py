@@ -10,7 +10,7 @@ import signal
 import time
 from dataclasses import dataclass, field
 
-from aiohttp import web
+import uvicorn
 
 from .bot import AutoReplyBot
 from .config import Bootstrap, Settings
@@ -52,6 +52,17 @@ async def _ticker(owner: OwnerDesk) -> None:
             raise
         except Exception:  # noqa: BLE001
             log.exception("Rejalashtirilgan vazifada xato")
+
+
+class _Server(uvicorn.Server):
+    """uvicorn inside our own event loop: we handle SIGINT/SIGTERM ourselves."""
+
+    def install_signal_handlers(self) -> None:  # uvicorn < 0.29
+        pass
+
+    @contextlib.contextmanager
+    def capture_signals(self):  # uvicorn >= 0.29
+        yield
 
 
 KEEP_AWAKE_INTERVAL = 6 * 3600
@@ -107,10 +118,12 @@ async def run(boot: Bootstrap) -> int:
     auth = Auth(store, boot)
     ctx = AppContext(boot, settings, store, llm, bot, owner, tg, auth, backup, log_buffer)
 
-    runner = web.AppRunner(create_app(ctx), access_log=None)
-    await runner.setup()
-    await web.TCPSite(runner, "0.0.0.0", boot.port).start()
-    log.info("Admin panel: http://0.0.0.0:%s", boot.port)
+    server = _Server(uvicorn.Config(
+        create_app(ctx), host="0.0.0.0", port=boot.port, lifespan="off",
+        access_log=False, log_level="warning", proxy_headers=False,
+    ))
+    web_task = asyncio.create_task(server.serve(), name="web")
+    log.info("Admin panel (FastAPI): http://0.0.0.0:%s", boot.port)
     if not backup.enabled:
         log.warning("Off-site zaxira o'chiq (HF_TOKEN, STATE_REPO, SECRET_KEY). "
                     "Hugging Face'da restartdan keyin sessiya yo'qolishi mumkin!")
@@ -122,6 +135,7 @@ async def run(boot: Bootstrap) -> int:
             loop.add_signal_handler(sig, stop.set)  # not available on Windows
 
     tasks = [
+        web_task,
         asyncio.create_task(tg.run_forever(), name="telegram"),
         asyncio.create_task(_ticker(owner), name="ticker"),
     ]
@@ -138,6 +152,9 @@ async def run(boot: Bootstrap) -> int:
                              exc_info=task.exception())
     finally:
         log.info("To'xtatilmoqda...")
+        server.should_exit = True
+        with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+            await asyncio.wait_for(asyncio.shield(web_task), timeout=5)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -148,7 +165,6 @@ async def run(boot: Bootstrap) -> int:
                 await tg.client.disconnect()
         with contextlib.suppress(Exception):
             await backup.backup_now()
-        await runner.cleanup()
         await llm.close()
         store.close()
         lock.release()

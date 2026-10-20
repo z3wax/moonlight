@@ -36,3 +36,15 @@ def test_chat_state_and_rate_limit():
     assert store.replies_since(5, now - 3600) == 1
     store.prune_replies(now - 3600)
     assert store.replies_since(5, 0) == 1
+
+
+def test_usable_from_another_thread(tmp_path):
+    import threading
+
+    store = Storage(tmp_path / "state.db")
+    store.set("k", "v")
+    seen = []
+    t = threading.Thread(target=lambda: (seen.append(store.get("k")), store.backup_to(tmp_path / "copy.db")))
+    t.start()
+    t.join()
+    assert seen == ["v"] and (tmp_path / "copy.db").exists()
