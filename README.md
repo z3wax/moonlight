@@ -11,7 +11,7 @@ maxfiy kalitlar uchun.
 - Bir nechta OpenRouter API kaliti — biri limitga yetsa yoki ishlamasa, keyingisi
   sezdirmasdan ishga tushadi; panelda har bir kalit holati ko'rinadi
 - OpenRouter kalitlari va modellari tugasa — **MoonLight API** (oxirgi chora,
-  o'zingizning OpenAI-mos serveringiz). U ham ishlamasa, odam jim qolmasin deb
+  `z3wax/mybackend` dagi MoonLight, `/api/ai/ask`). U ham ishlamasa, odam jim qolmasin deb
   tayyor javob yuboriladi
 - Bepul, rasmni ko'radigan model (standart: `google/gemma-3-27b-it:free`) va zaxira modellar
 - "Thinking" rejimi o'chirilgan — tez javob

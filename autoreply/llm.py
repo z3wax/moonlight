@@ -66,6 +66,34 @@ def has_images(messages: list[dict]) -> bool:
     return any(isinstance(m.get("content"), list) for m in messages)
 
 
+def _text_of(content) -> str:
+    if isinstance(content, list):
+        return "\n".join(p.get("text", "") for p in content if p.get("type") == "text")
+    return str(content or "")
+
+
+def moonlight_payload(messages: list[dict]) -> dict:
+    """OpenAI-style messages -> MoonLight ``/api/ai/ask`` body.
+
+    MoonLight has no system role: the instructions go in front of the
+    question, earlier turns go to ``history`` and images stay data URLs.
+    """
+    system = "\n".join(_text_of(m["content"]) for m in messages if m.get("role") == "system")
+    turns = [m for m in messages if m.get("role") in ("user", "assistant")]
+    last = turns.pop() if turns and turns[-1]["role"] == "user" else {"content": ""}
+    question = _text_of(last["content"]).strip()
+    if system:
+        question = f"[Ko'rsatma]\n{system[:1500]}\n\n[Xabar]\n{question}"
+    images = []
+    if isinstance(last["content"], list):
+        images = [p["image_url"]["url"] for p in last["content"] if p.get("type") == "image_url"]
+    return {
+        "question": question,
+        "history": [{"role": m["role"], "content": _text_of(m["content"])} for m in turns[-8:]],
+        "images": images[:2],
+    }
+
+
 def strip_images(messages: list[dict]) -> list[dict]:
     out = []
     for m in messages:
@@ -156,6 +184,7 @@ class OpenRouterClient:
         if not self._states() and not (self.s.moonlight_enabled and self.s.moonlight_base_url):
             raise LLMError("OpenRouter API kaliti kiritilmagan (admin panel → AI).")
         errors: list[str] = []
+        original = messages  # MoonLight can see images even if OpenRouter models could not
         for round_no in range(2):
             for current in self.models(model):
                 text = await self._try_model(current, messages, max_tokens, temperature, errors)
@@ -166,45 +195,61 @@ class OpenRouterClient:
                 messages = strip_images(messages)
             elif round_no == 0:
                 await asyncio.sleep(3)
-        text = await self._try_moonlight(strip_images(messages), max_tokens, temperature, errors)
+        text = await self._try_moonlight(original, max_tokens, temperature, errors)
         if text:
             return text
         self.last_error = "; ".join(errors[-4:])
         raise LLMError("Barcha kalit/modellar ishlamadi: " + self.last_error)
 
     async def _try_moonlight(self, messages, max_tokens, temperature, errors) -> str:
-        """Last resort: the owner's own OpenAI-compatible MoonLight endpoint."""
+        """Last resort: the owner's MoonLight backend (z3wax/mybackend).
+
+        ``https://<space>.hf.space`` speaks MoonLight's own ``/api/ai/ask``;
+        a base URL ending in ``/v1`` is treated as an OpenAI-compatible server.
+        """
         base = (self.s.moonlight_base_url or "").rstrip("/")
         if not (self.s.moonlight_enabled and base):
             return ""
-        headers = {}
-        if self.s.moonlight_api_key:
-            headers["Authorization"] = f"Bearer {self.s.moonlight_api_key}"
-        payload = {
-            "model": self.s.moonlight_model or "moonlight-v1",
-            "messages": messages,
-            "temperature": self.s.temperature if temperature is None else temperature,
-            "max_tokens": max_tokens or self.s.max_tokens,
-        }
+        key = self.s.moonlight_api_key or (
+            getattr(self.s.boot, "hf_token", "") if ".hf.space" in base else ""
+        )
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
         started = time.monotonic()
         self.total_requests += 1
+        if base.endswith("/v1"):
+            url = f"{base}/chat/completions"
+            payload = {
+                "model": self.s.moonlight_model or "moonlight-v1",
+                "messages": strip_images(messages),
+                "temperature": self.s.temperature if temperature is None else temperature,
+                "max_tokens": max_tokens or self.s.max_tokens,
+            }
+        else:
+            url = f"{base}/api/ai/ask"
+            payload = moonlight_payload(messages)
         try:
-            response = await self._client.post(
-                f"{base}/chat/completions", json=payload, headers=headers,
-                timeout=self.s.llm_timeout,
-            )
+            response = await self._client.post(url, json=payload, headers=headers,
+                                               timeout=max(self.s.llm_timeout, 120))
         except httpx.HTTPError as exc:
             errors.append(f"moonlight: tarmoq ({exc.__class__.__name__})")
             return ""
         if response.status_code != 200:
             errors.append(f"moonlight: {response.status_code} {response.text[:120]}")
             return ""
-        text, error = self._extract(response)
+        if base.endswith("/v1"):
+            text, error = self._extract(response)
+        else:
+            try:
+                data = response.json()
+            except ValueError:
+                data = {}
+            text = THINK_RE.sub("", str(data.get("answer") or data.get("reply") or "")).strip()
+            error = "" if data.get("success", True) else str(data.get("error", ""))[:200]
         if not text:
             errors.append(f"moonlight: {error or 'bo`sh javob'}")
             return ""
         log.warning("OpenRouter ishlamadi - javob MoonLight'dan olindi")
-        self.last_model = f"moonlight:{payload['model']}"
+        self.last_model = "moonlight"
         self.last_latency = time.monotonic() - started
         return text
 

@@ -130,21 +130,42 @@ def test_no_keys(settings):
 
 
 def test_moonlight_is_last_resort(cfg):
-    cfg.update({"moonlight_enabled": True, "moonlight_base_url": "https://moon.example/v1",
-                "moonlight_api_key": "ml-key"})
-    hosts = []
+    cfg.update({"moonlight_enabled": True, "moonlight_base_url": "https://abdulhodiy-mzwax.hf.space",
+                "moonlight_api_key": ""})
+    cfg.boot.hf_token = "hf_owner"
+    seen = {}
 
     def handler(request):
-        hosts.append(request.url.host)
-        if request.url.host == "moon.example":
-            assert request.headers["authorization"] == "Bearer ml-key"
-            return ok("MoonLight javobi")
+        if request.url.host == "abdulhodiy-mzwax.hf.space":
+            seen["auth"] = request.headers["authorization"]
+            seen["path"] = request.url.path
+            seen["body"] = json.loads(request.content)
+            return httpx.Response(200, json={"success": True, "answer": "MoonLight javobi"})
         return httpx.Response(429, json={"error": {"message": "limit"}})
 
-    client, result = run(cfg, handler)
-    assert result == "MoonLight javobi"
-    assert hosts[-1] == "moon.example" and "openrouter.ai" in hosts
-    assert client.last_model.startswith("moonlight:")
+    msgs = [{"role": "system", "content": "Sen yordamchisan"},
+            {"role": "user", "content": "salom"}, {"role": "assistant", "content": "va alaykum"},
+            {"role": "user", "content": "qalaysan?"}]
+    client, result = run(cfg, handler, msgs)
+    assert result == "MoonLight javobi" and client.last_model == "moonlight"
+    assert seen["path"] == "/api/ai/ask" and seen["auth"] == "Bearer hf_owner"
+    assert seen["body"]["question"].endswith("qalaysan?") and "Sen yordamchisan" in seen["body"]["question"]
+    assert seen["body"]["history"] == [{"role": "user", "content": "salom"},
+                                       {"role": "assistant", "content": "va alaykum"}]
+
+
+def test_moonlight_openai_compatible_v1(cfg):
+    cfg.update({"moonlight_enabled": True, "moonlight_base_url": "https://moon.example/v1",
+                "moonlight_api_key": "ml-key"})
+
+    def handler(request):
+        if request.url.host == "moon.example":
+            assert request.url.path == "/v1/chat/completions"
+            assert request.headers["authorization"] == "Bearer ml-key"
+            return ok("v1 javob")
+        return httpx.Response(429, json={"error": {"message": "limit"}})
+
+    assert run(cfg, handler)[1] == "v1 javob"
 
 
 def test_moonlight_disabled_still_raises(cfg):
