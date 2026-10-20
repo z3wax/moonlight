@@ -41,6 +41,29 @@ CREATE TABLE IF NOT EXISTS events (
     text      TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events (ts);
+CREATE TABLE IF NOT EXISTS commands (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts      REAL    NOT NULL,
+    kind    TEXT    NOT NULL,
+    payload TEXT    NOT NULL,
+    status  TEXT    NOT NULL DEFAULT 'pending',
+    result  TEXT
+);
+CREATE TABLE IF NOT EXISTS admin_sessions (
+    token     TEXT PRIMARY KEY,
+    csrf      TEXT NOT NULL,
+    ip        TEXT NOT NULL,
+    created   REAL NOT NULL,
+    last_seen REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_fails (
+    ip TEXT NOT NULL,
+    ts REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_locks (
+    ip    TEXT PRIMARY KEY,
+    until REAL NOT NULL
+);
 """
 
 
@@ -55,6 +78,8 @@ class Storage:
         self._db = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA synchronous=NORMAL")
+        # The web app (WSGI) and the bot worker may share this file.
+        self._db.execute("PRAGMA busy_timeout=5000")
         self._db.executescript(SCHEMA)
 
     def close(self) -> None:
@@ -72,7 +97,7 @@ class Storage:
         ).fetchone()
         return row[0] if row else default
 
-    def set(self, key: str, value: str | None) -> None:
+    def set(self, key: str, value: str | None, notify: bool = True) -> None:
         if value is None:
             self._db.execute("DELETE FROM settings WHERE key = ?", (key,))
         else:
@@ -81,7 +106,8 @@ class Storage:
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (key, value),
             )
-        self._changed()
+        if notify:
+            self._changed()
 
     def get_bool(self, key: str, default: bool) -> bool:
         value = self.get(key)
@@ -207,3 +233,99 @@ class Storage:
             self._db.backup(dest)
         finally:
             dest.close()
+
+    # --- web <-> worker command queue (Flask/WSGI deployments) ----------
+
+    def enqueue_command(self, kind: str, payload: dict | None = None) -> int:
+        cur = self._db.execute(
+            "INSERT INTO commands (ts, kind, payload) VALUES (?, ?, ?)",
+            (time.time(), kind, json.dumps(payload or {}, ensure_ascii=False)),
+        )
+        return int(cur.lastrowid)
+
+    def claim_command(self, max_age: float = 60) -> dict | None:
+        """Oldest pending command, marked as running (stale ones expire)."""
+        self._db.execute(
+            "UPDATE commands SET status = 'expired' WHERE status = 'pending' AND ts < ?",
+            (time.time() - max_age,),
+        )
+        row = self._db.execute(
+            "SELECT id, kind, payload FROM commands WHERE status = 'pending' ORDER BY id LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        claimed = self._db.execute(
+            "UPDATE commands SET status = 'running' WHERE id = ? AND status = 'pending'", (row[0],)
+        ).rowcount
+        if not claimed:
+            return None
+        return {"id": row[0], "kind": row[1], "payload": json.loads(row[2])}
+
+    def finish_command(self, command_id: int, result: dict) -> None:
+        self._db.execute(
+            "UPDATE commands SET status = 'done', result = ? WHERE id = ?",
+            (json.dumps(result, ensure_ascii=False, default=str), command_id),
+        )
+
+    def command_result(self, command_id: int) -> dict | None:
+        row = self._db.execute(
+            "SELECT status, result FROM commands WHERE id = ?", (command_id,)
+        ).fetchone()
+        if row is None or row[0] != "done":
+            return None
+        return json.loads(row[1])
+
+    def abandon_command(self, command_id: int) -> None:
+        self._db.execute(
+            "UPDATE commands SET status = 'expired' WHERE id = ? AND status = 'pending'",
+            (command_id,),
+        )
+
+    def prune_commands(self, older_than: float) -> None:
+        self._db.execute("DELETE FROM commands WHERE ts < ?", (older_than,))
+
+    # --- admin panel sessions and login lockout -------------------------
+
+    def save_admin_session(self, token: str, csrf: str, ip: str, now: float) -> None:
+        self._db.execute(
+            "INSERT INTO admin_sessions (token, csrf, ip, created, last_seen) VALUES (?, ?, ?, ?, ?)",
+            (token, csrf, ip, now, now),
+        )
+
+    def admin_session(self, token: str) -> tuple | None:
+        return self._db.execute(
+            "SELECT token, csrf, ip, created, last_seen FROM admin_sessions WHERE token = ?",
+            (token,),
+        ).fetchone()
+
+    def touch_admin_session(self, token: str, now: float) -> None:
+        self._db.execute("UPDATE admin_sessions SET last_seen = ? WHERE token = ?", (now, token))
+
+    def delete_admin_session(self, token: str | None = None) -> None:
+        if token is None:
+            self._db.execute("DELETE FROM admin_sessions")
+        else:
+            self._db.execute("DELETE FROM admin_sessions WHERE token = ?", (token,))
+
+    def add_auth_fail(self, ip: str, now: float) -> None:
+        self._db.execute("INSERT INTO auth_fails (ip, ts) VALUES (?, ?)", (ip, now))
+
+    def count_auth_fails(self, ip: str, since: float) -> int:
+        row = self._db.execute(
+            "SELECT COUNT(*) FROM auth_fails WHERE ip = ? AND ts >= ?", (ip, since)
+        ).fetchone()
+        return int(row[0])
+
+    def clear_auth_fails(self, ip: str) -> None:
+        self._db.execute("DELETE FROM auth_fails WHERE ip = ?", (ip,))
+
+    def lock_ip(self, ip: str, until: float) -> None:
+        self._db.execute(
+            "INSERT INTO auth_locks (ip, until) VALUES (?, ?) "
+            "ON CONFLICT(ip) DO UPDATE SET until = excluded.until",
+            (ip, until),
+        )
+
+    def locked_until(self, ip: str) -> float:
+        row = self._db.execute("SELECT until FROM auth_locks WHERE ip = ?", (ip,)).fetchone()
+        return float(row[0]) if row else 0.0

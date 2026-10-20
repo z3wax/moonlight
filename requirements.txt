@@ -3,6 +3,7 @@ httpx>=0.27
 fastapi>=0.110
 uvicorn>=0.29
 python-multipart>=0.0.9
+flask>=3.0                  # WSGI panel (PythonAnywhere)
 python-dotenv>=1.0
 cryptography>=42
 huggingface_hub>=0.24

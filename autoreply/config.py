@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -287,6 +288,11 @@ class Settings:
     def __init__(self, boot: Bootstrap, store=None):
         object.__setattr__(self, "boot", boot)
         object.__setattr__(self, "_store", store)
+        self.reload()
+
+    def reload(self) -> None:
+        """Re-read every value (another process may have saved new ones)."""
+        store = self._store
         values = {}
         saved = store.get_config_all() if store is not None else {}
         for field in FIELDS:
@@ -329,7 +335,14 @@ class Settings:
             self._values[key] = value
             if self._store is not None:
                 self._store.set_config(key, value)
+        if clean and self._store is not None:
+            # Lets a separate bot worker notice changes saved by the web app.
+            self._store.set("config_version", repr(time.time()))
         return restart
+
+    @property
+    def version(self) -> str:
+        return (self._store.get("config_version") if self._store is not None else None) or ""
 
     def as_dict(self) -> dict[str, Any]:
         return dict(self._values)

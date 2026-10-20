@@ -104,6 +104,10 @@ HF_TOKEN=hf_xxx HF_SPACE=ABDULHODIY/tg-autoreply ADMIN_PASSWORD='...' python dep
 - Persistent storage ulansa (`/data`), holat diskda saqlanadi; dataset zaxirasi
   qo'shimcha himoya bo'lib qoladi.
 
+## PythonAnywhere (Flask/WSGI)
+
+Panel Web (WSGI) da, bot Always-on task'da: [PYTHONANYWHERE.md](PYTHONANYWHERE.md).
+
 ## O'z kompyuteringiz / VPS'da
 
 ```bash

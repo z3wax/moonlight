@@ -46,12 +46,12 @@ class AdminSession:
 
 
 class Auth:
+    """Admin login. Sessions and lockouts live in SQLite, so they survive
+    restarts and work when the web app runs as several WSGI processes."""
+
     def __init__(self, store, boot):
         self.store = store
         self.boot = boot
-        self.sessions: dict[str, AdminSession] = {}
-        self._fails: dict[str, list[float]] = {}
-        self._locked_until: dict[str, float] = {}
         self._ensure_credentials()
 
     # --- credentials -----------------------------------------------------
@@ -80,22 +80,19 @@ class Auth:
         self.store.set("admin_password_hash", hash_password(new))
         if new_username:
             self.store.set("admin_username", new_username.strip())
-        self.sessions.clear()  # log out everywhere
+        self.store.delete_admin_session()  # log out everywhere
 
     # --- brute-force protection -----------------------------------------
 
     def locked_for(self, ip: str) -> int:
-        until = self._locked_until.get(ip, 0)
-        return max(0, int(until - time.time()))
+        return max(0, int(self.store.locked_until(ip) - time.time()))
 
     def _record_fail(self, ip: str) -> None:
         now = time.time()
-        fails = [t for t in self._fails.get(ip, []) if now - t < FAIL_WINDOW]
-        fails.append(now)
-        self._fails[ip] = fails
-        if len(fails) >= MAX_FAILS:
-            self._locked_until[ip] = now + LOCK_SECONDS
-            self._fails[ip] = []
+        self.store.add_auth_fail(ip, now)
+        if self.store.count_auth_fails(ip, now - FAIL_WINDOW) >= MAX_FAILS:
+            self.store.lock_ip(ip, now + LOCK_SECONDS)
+            self.store.clear_auth_fails(ip)
             log.warning("Admin panel: %s IP %s daqiqaga bloklandi (ko'p noto'g'ri urinish)",
                         ip, LOCK_SECONDS // 60)
 
@@ -108,26 +105,28 @@ class Auth:
             self._record_fail(ip)
             log.warning("Admin panel: noto'g'ri login urinish (%s)", ip)
             return None
-        self._fails.pop(ip, None)
+        self.store.clear_auth_fails(ip)
         now = time.time()
         session = AdminSession(secrets.token_urlsafe(32), secrets.token_urlsafe(24), ip, now, now)
-        self.sessions[session.token] = session
+        self.store.save_admin_session(session.token, session.csrf, ip, now)
         log.info("Admin panelga kirildi (%s)", ip)
         return session
 
     def get(self, token: str | None) -> AdminSession | None:
         if not token:
             return None
-        session = self.sessions.get(token)
-        if session is None:
+        row = self.store.admin_session(token)
+        if row is None:
             return None
+        session = AdminSession(*row)
         now = time.time()
         if now - session.created > SESSION_TTL or now - session.last_seen > IDLE_TTL:
-            self.sessions.pop(token, None)
+            self.store.delete_admin_session(token)
             return None
+        self.store.touch_admin_session(token, now)
         session.last_seen = now
         return session
 
     def logout(self, token: str | None) -> None:
         if token:
-            self.sessions.pop(token, None)
+            self.store.delete_admin_session(token)

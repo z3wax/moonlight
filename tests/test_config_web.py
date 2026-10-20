@@ -46,7 +46,8 @@ def test_auth_lockout_and_sessions(boot, store):
     # correct password is refused while locked
     assert auth.login("abu", "test-password-123", "2.2.2.2") is None
     session = auth.login("ABU", "test-password-123", "3.3.3.3")
-    assert auth.get(session.token) is session
+    assert auth.get(session.token).token == session.token
+    assert Auth(store, boot).get(session.token) is not None  # survives a new process
     auth.change_password("test-password-123", "new-password-456")
     assert auth.get(session.token) is None  # everyone logged out
     with pytest.raises(ValueError):

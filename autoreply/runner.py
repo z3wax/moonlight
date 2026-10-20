@@ -95,7 +95,10 @@ async def _keep_awake(settings: Settings, boot: Bootstrap) -> None:
                 log.warning("Uyg'oq saqlash so'rovi bajarilmadi: %s", exc)
 
 
-async def run(boot: Bootstrap) -> int:
+async def run(boot: Bootstrap, web: bool = True) -> int:
+    """``web=True``: bot + FastAPI panel in one process (HF, VPS, Pterodactyl).
+    ``web=False``: bot only, talking to a separate Flask/WSGI web app through
+    the database (PythonAnywhere: Web app + Always-on task)."""
     log_buffer = setup_logging(boot.log_level, boot.data_dir)
 
     lock = SessionLock(boot.sessions_dir / f"{boot.session_name}.lock")
@@ -118,12 +121,19 @@ async def run(boot: Bootstrap) -> int:
     auth = Auth(store, boot)
     ctx = AppContext(boot, settings, store, llm, bot, owner, tg, auth, backup, log_buffer)
 
-    server = _Server(uvicorn.Config(
-        create_app(ctx), host="0.0.0.0", port=boot.port, lifespan="off",
-        access_log=False, log_level="warning", proxy_headers=False,
-    ))
-    web_task = asyncio.create_task(server.serve(), name="web")
-    log.info("Admin panel (FastAPI): http://0.0.0.0:%s", boot.port)
+    server = None
+    if web:
+        server = _Server(uvicorn.Config(
+            create_app(ctx), host="0.0.0.0", port=boot.port, lifespan="off",
+            access_log=False, log_level="warning", proxy_headers=False,
+        ))
+        web_task = asyncio.create_task(server.serve(), name="web")
+        log.info("Admin panel (FastAPI): http://0.0.0.0:%s", boot.port)
+    else:
+        from .bridge import Bridge
+
+        web_task = asyncio.create_task(Bridge(ctx).run(), name="bridge")
+        log.info("Bot worker ishga tushdi (panel alohida: Flask/WSGI)")
     if not backup.enabled:
         log.warning("Off-site zaxira o'chiq (HF_TOKEN, STATE_REPO, SECRET_KEY). "
                     "Hugging Face'da restartdan keyin sessiya yo'qolishi mumkin!")
@@ -152,9 +162,10 @@ async def run(boot: Bootstrap) -> int:
                              exc_info=task.exception())
     finally:
         log.info("To'xtatilmoqda...")
-        server.should_exit = True
-        with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
-            await asyncio.wait_for(asyncio.shield(web_task), timeout=5)
+        if server is not None:
+            server.should_exit = True
+            with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+                await asyncio.wait_for(asyncio.shield(web_task), timeout=5)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
