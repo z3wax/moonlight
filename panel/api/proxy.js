@@ -2,7 +2,8 @@
 // https://z3wax.enzonic.dev, or a private Hugging Face Space). The shared proxy
 // secret (and the HF token, only for *.hf.space) stay on the server - the
 // browser never sees them, and the panel's cookies stay first-party here.
-export const config = { runtime: 'edge' };
+// Node.js runtime (not Edge): Edge hides network errors as "internal error".
+export const config = { maxDuration: 30 };
 
 const PATH_RE = /^[a-z0-9_\/-]{1,80}$/;
 const REQUEST_HEADERS = ['content-type', 'cookie', 'x-csrf-token', 'accept'];
@@ -29,7 +30,7 @@ function explain(e) {
   return raw.trim().slice(0, 160) || 'noma‘lum xato';
 }
 
-export default async function handler(request) {
+async function handler(request) {
   const { HF_TOKEN, PROXY_SECRET } = process.env;
   const BACKEND_URL = process.env.BACKEND_URL || process.env.HF_SPACE_URL;
   if (!BACKEND_URL || !PROXY_SECRET) {
@@ -85,3 +86,7 @@ export default async function handler(request) {
   for (const cookie of cookies) out.append('set-cookie', cookie);
   return new Response(upstream.body, { status: upstream.status, headers: out });
 }
+
+export const GET = handler;
+export const POST = handler;
+export const HEAD = handler;
