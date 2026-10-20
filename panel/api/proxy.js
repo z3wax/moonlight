@@ -1,6 +1,7 @@
-// Forwards /api/* from the Vercel panel to the private Hugging Face Space.
-// The HF token and the shared proxy secret stay on the server - the browser
-// never sees them, and the panel's cookies stay first-party on this domain.
+// Forwards /api/* from the Vercel panel to the bot backend (BACKEND_URL, e.g.
+// https://z3wax.enzonic.dev, or a private Hugging Face Space). The shared proxy
+// secret (and the HF token, only for *.hf.space) stay on the server - the
+// browser never sees them, and the panel's cookies stay first-party here.
 export const config = { runtime: 'edge' };
 
 const PATH_RE = /^[a-z0-9_\/-]{1,80}$/;
@@ -16,10 +17,13 @@ function json(status, error) {
 }
 
 export default async function handler(request) {
-  const { HF_SPACE_URL, HF_TOKEN, PROXY_SECRET } = process.env;
-  if (!HF_SPACE_URL || !HF_TOKEN || !PROXY_SECRET) {
-    return json(500, 'Vercel sozlanmagan: HF_SPACE_URL, HF_TOKEN, PROXY_SECRET kerak');
+  const { HF_TOKEN, PROXY_SECRET } = process.env;
+  const BACKEND_URL = process.env.BACKEND_URL || process.env.HF_SPACE_URL;
+  if (!BACKEND_URL || !PROXY_SECRET) {
+    return json(500, 'Vercel sozlanmagan: BACKEND_URL va PROXY_SECRET kerak');
   }
+  const backend = new URL(BACKEND_URL);
+  const isHfSpace = backend.hostname.endsWith('.hf.space');
   const url = new URL(request.url);
   const path = url.searchParams.get('path') || '';
   if (!PATH_RE.test(path) || path.includes('..')) return json(400, 'Noto‘g‘ri manzil');
@@ -29,7 +33,8 @@ export default async function handler(request) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
-  headers.set('authorization', `Bearer ${HF_TOKEN}`);
+  // Never hand the HF token to any host other than Hugging Face.
+  if (isHfSpace && HF_TOKEN) headers.set('authorization', `Bearer ${HF_TOKEN}`);
   headers.set('x-proxy-secret', PROXY_SECRET);
   const ip = request.headers.get('x-real-ip') || (request.headers.get('x-forwarded-for') || '').split(',')[0].trim();
   if (ip) headers.set('x-client-ip', ip);
@@ -43,17 +48,17 @@ export default async function handler(request) {
 
   let upstream;
   try {
-    upstream = await fetch(`${HF_SPACE_URL.replace(/\/+$/, '')}/api/${path}`, init);
+    upstream = await fetch(`${BACKEND_URL.replace(/\/+$/, '')}/api/${path}`, init);
   } catch (e) {
-    return json(502, 'Backend (Hugging Face) bilan aloqa yo‘q');
+    return json(502, `Backend bilan aloqa yo‘q (${backend.hostname})`);
   }
   if (upstream.status >= 300 && upstream.status < 400) {
-    return json(502, 'Hugging Face tokeni noto‘g‘ri yoki Space topilmadi');
+    return json(502, isHfSpace ? 'Hugging Face tokeni noto‘g‘ri yoki Space topilmadi' : 'Backend yo‘naltirish qaytardi (manzilni tekshiring)');
   }
   const type = upstream.headers.get('content-type') || '';
   if (!type.includes('application/json') && !type.startsWith('image/')) {
-    // HF shows an HTML page while the Space is building or waking up.
-    return json(503, 'Backend ishga tushmoqda (Hugging Face Space uyg‘onmoqda). 1–2 daqiqadan so‘ng yangilang.');
+    // An HTML page here means the backend is starting (or a host error page).
+    return json(503, 'Backend javob bermayapti yoki ishga tushmoqda. 1–2 daqiqadan so‘ng yangilang.');
   }
 
   const out = new Headers();
