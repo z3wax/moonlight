@@ -1,0 +1,12 @@
+# Maxfiy: HECH QACHON GitHub'ga yuklamang
+.env
+data/
+sessions/
+*.session
+*.session-journal
+*.string
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/

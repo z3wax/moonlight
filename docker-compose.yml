@@ -1,0 +1,10 @@
+services:
+  autoreply:
+    build: .
+    container_name: tg-autoreply
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:7860:7860"   # panel faqat shu kompyuterdan; tashqariga reverse-proxy orqali
+    volumes:
+      - ./data:/app/data

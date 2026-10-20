@@ -1,0 +1,52 @@
+name: Deploy Telegram AutoReply to Hugging Face
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-hf-space
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - run: pytest -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_SPACE: ${{ vars.HF_SPACE || 'ABDULHODIY/tg-autoreply' }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      PROXY_SECRET: ${{ secrets.PROXY_SECRET }}
+      STATE_REPO: ${{ vars.STATE_REPO }}
+    steps:
+      - name: Check token
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::warning::HF_TOKEN secret qo'shilmagan - deploy o'tkazib yuborildi"
+          else
+            echo "HAS_TOKEN=1" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/checkout@v4
+        if: env.HAS_TOKEN == '1'
+      - uses: actions/setup-python@v5
+        if: env.HAS_TOKEN == '1'
+        with:
+          python-version: "3.12"
+      - name: Upload to private Space
+        if: env.HAS_TOKEN == '1'
+        run: pip install "huggingface_hub>=0.24" && python deploy/deploy_hf.py

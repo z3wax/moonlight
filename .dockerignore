@@ -1,0 +1,10 @@
+.env
+data/
+sessions/
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+tests/
+space/
+deploy/

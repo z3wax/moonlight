@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>AutoReply — Admin panel</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><div class="logo">✦</div><div><b>AutoReply</b><span class="muted small" id="who"></span></div></div>
+    <nav class="nav" id="nav">
+      <button data-section="dashboard" class="active"><span class="ico">◉</span>Umumiy holat</button>
+      <button data-section="telegram"><span class="ico">✈︎</span>Telegram akkaunt</button>
+      <button data-section="ai"><span class="ico">✦</span>Sun'iy intellekt</button>
+      <button data-section="behavior"><span class="ico">⚙︎</span>Xulq-atvor</button>
+      <button data-section="persona"><span class="ico">☺︎</span>Shaxsiyat va matnlar</button>
+      <button data-section="owner"><span class="ico">⇄</span>Ikkinchi akkaunt</button>
+      <button data-section="channel"><span class="ico">📣</span>Kanal e'lonlari</button>
+      <button data-section="security"><span class="ico">🔒</span>Xavfsizlik</button>
+      <button data-section="logs"><span class="ico">☰</span>Loglar</button>
+    </nav>
+    <div class="bottom"><button class="btn ghost block" id="logout-btn">Chiqish</button></div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <h1 id="title">Umumiy holat</h1>
+      <select class="mobile-nav" id="mobile-nav" aria-label="Bo'lim">
+        <option value="dashboard">Umumiy holat</option>
+        <option value="telegram">Telegram akkaunt</option>
+        <option value="ai">Sun'iy intellekt</option>
+        <option value="behavior">Xulq-atvor</option>
+        <option value="persona">Shaxsiyat va matnlar</option>
+        <option value="owner">Ikkinchi akkaunt</option>
+        <option value="channel">Kanal e'lonlari</option>
+        <option value="security">Xavfsizlik</option>
+        <option value="logs">Loglar</option>
+      </select>
+    </div>
+
+    <!-- DASHBOARD -->
+    <section class="section active" id="sec-dashboard">
+      <div class="card hero-toggle mb16">
+        <div><b>AI avtojavob</b><div class="muted small" id="ai-hero-sub">—</div></div>
+        <label class="switch"><input type="checkbox" id="ai-master"><span class="track"></span></label>
+      </div>
+      <div class="grid cols-4 mb16">
+        <div class="card stat"><div class="label">Telegram</div><div class="value" id="st-tg">—</div><div class="sub" id="st-tg-sub"></div></div>
+        <div class="card stat"><div class="label">Javoblar (shu sessiya)</div><div class="value" id="st-replies">0</div><div class="sub" id="st-events"></div></div>
+        <div class="card stat"><div class="label">API kalitlar</div><div class="value" id="st-keys">0</div><div class="sub" id="st-keys-sub"></div></div>
+        <div class="card stat"><div class="label">Server ishlayapti</div><div class="value" id="st-uptime">—</div><div class="sub" id="st-mem"></div></div>
+      </div>
+      <div class="grid cols-2">
+        <div class="card"><h3>Akkaunt</h3><div id="dash-account" class="account"><div class="avatar">?</div><div class="muted">Login qilinmagan</div></div></div>
+        <div class="card"><h3>AI</h3><dl class="kv" id="dash-ai"></dl></div>
+        <div class="card"><h3>Server</h3><dl class="kv" id="dash-server"></dl></div>
+        <div class="card"><h3>Faollik (24 soat)</h3><dl class="kv" id="dash-activity"></dl></div>
+      </div>
+    </section>
+
+    <!-- TELEGRAM -->
+    <section class="section" id="sec-telegram">
+      <div class="card mb16" id="login-card">
+        <h3>Telegram'ga ulash <span class="pill warn" id="login-state">—</span></h3>
+        <div id="login-step-phone">
+          <p class="muted small">Telefon raqamingizni kiriting — Telegram ilovangizga kod keladi.</p>
+          <label class="field"><span>Telefon raqam</span><input type="tel" id="tg-phone" placeholder="+998901234567"></label>
+          <button class="btn" id="tg-send-code">Kod yuborish</button>
+        </div>
+        <div id="login-step-code" class="hidden">
+          <label class="field"><span>Telegram'dan kelgan kod</span><input type="text" id="tg-code" inputmode="numeric" autocomplete="one-time-code"></label>
+          <div class="actions"><button class="btn" id="tg-submit-code">Tasdiqlash</button><button class="btn ghost" id="tg-back">Raqamni o'zgartirish</button></div>
+        </div>
+        <div id="login-step-password" class="hidden">
+          <label class="field"><span>Ikki bosqichli parol (2FA)</span><input type="password" id="tg-2fa" autocomplete="off"></label>
+          <button class="btn" id="tg-submit-password">Kirish</button>
+        </div>
+        <div class="error" id="tg-error"></div>
+      </div>
+
+      <div class="grid cols-2 mb16" id="account-cards">
+        <div class="card">
+          <h3>Profil</h3>
+          <div class="account mb16"><img class="avatar" id="tg-avatar" alt=""><div><b id="tg-name">—</b><div class="muted small" id="tg-username"></div></div></div>
+          <label class="field"><span>Ism</span><input type="text" id="tg-first"></label>
+          <label class="field"><span>Familiya</span><input type="text" id="tg-last"></label>
+          <div class="actions">
+            <button class="btn" id="tg-save-name">Ismni saqlash</button>
+            <label class="btn ghost">Rasmni almashtirish<input type="file" id="tg-photo" accept="image/jpeg,image/png" hidden></label>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Joriy sessiya <span class="pill" id="tg-pill">—</span></h3>
+          <dl class="kv" id="tg-session"></dl>
+          <div class="actions mt16">
+            <button class="btn ghost" id="tg-reconnect">Qayta ulash</button>
+            <button class="btn danger" id="tg-logout">Sessiyani bekor qilish</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb22">
+        <h3>Akkauntdagi barcha faol sessiyalar <button class="btn ghost sm" id="tg-load-sessions">Yangilash</button></h3>
+        <div class="scroll-x"><table class="tbl" id="tg-sessions"><tbody><tr><td class="muted">Yuklash uchun "Yangilash" ni bosing</td></tr></tbody></table></div>
+      </div>
+      <div data-group="telegram"></div>
+    </section>
+
+    <!-- AI -->
+    <section class="section" id="sec-ai">
+      <div class="list-title">OpenRouter API kalitlari</div>
+      <div class="list keys" id="keys-list"></div>
+      <div class="card mb22">
+        <h3>Yangi kalit qo'shish</h3>
+        <div class="actions"><input class="flex1" type="password" id="key-new" placeholder="sk-or-v1-..." autocomplete="off"><button class="btn" id="key-add">Qo'shish</button></div>
+        <p class="muted small mt10">Kalitlar yuqoridan pastga tartibda ishlatiladi. Biri limitga yetsa yoki ishlamasa — keyingisi avtomatik ishga tushadi.</p>
+      </div>
+      <div class="card mb22">
+        <h3>AI ni sinash</h3>
+        <div class="actions"><input class="flex1" type="text" id="ai-test-text" placeholder="Salom, qalaysan?"><button class="btn" id="ai-test">Yuborish</button></div>
+        <div id="ai-test-out" class="muted small mt12 pre"></div>
+      </div>
+      <div data-group="ai"></div>
+    </section>
+
+    <section class="section" id="sec-behavior"><div data-group="behavior"></div></section>
+    <section class="section" id="sec-persona"><div data-group="persona"></div></section>
+
+    <section class="section" id="sec-owner">
+      <div class="card mb22">
+        <h3>Ikkinchi akkaunt</h3>
+        <p class="muted small mt0">Kim yozgani va nima haqida ekanini qisqacha shu akkauntga yuboradi. U yerdan <code>/help</code> deb yozsangiz buyruqlar ro'yxati keladi.</p>
+        <div class="actions"><span class="pill" id="owner-pill">—</span><button class="btn ghost sm" id="owner-report">Hozir hisobot yuborish</button></div>
+      </div>
+      <div data-group="owner"></div>
+    </section>
+
+    <section class="section" id="sec-channel">
+      <div class="card mb22">
+        <h3>Kanal e'lonlari</h3>
+        <p class="muted small mt0">Har kuni belgilangan vaqtda mavzular ro'yxatidan navbatdagisi bo'yicha AI e'lon yozib, kanalga joylaydi.</p>
+        <button class="btn ghost sm" id="channel-post">Hozir e'lon chiqarish</button>
+      </div>
+      <div data-group="channel"></div>
+    </section>
+
+    <section class="section" id="sec-security">
+      <div class="grid cols-2">
+        <form class="card" id="pw-form">
+          <h3>Admin login va parol</h3>
+          <label class="field"><span>Login (o'zgartirmasangiz bo'sh qoldiring)</span><input type="text" name="username" autocomplete="username"></label>
+          <label class="field"><span>Joriy parol</span><input type="password" name="current" autocomplete="current-password" required></label>
+          <label class="field"><span>Yangi parol (kamida 8 belgi)</span><input type="password" name="new" autocomplete="new-password" required minlength="8"></label>
+          <button class="btn" type="submit">Saqlash</button>
+          <div class="error" id="pw-error"></div>
+        </form>
+        <div class="card">
+          <h3>Himoya</h3>
+          <dl class="kv" id="sec-info"></dl>
+          <div class="actions mt16"><button class="btn ghost" id="backup-now">Zaxirani hozir saqlash</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="sec-logs">
+      <div class="actions mb12"><button class="btn ghost sm" id="logs-refresh">Yangilash</button></div>
+      <div class="logs" id="logs"></div>
+    </section>
+  </main>
+</div>
+
+<div class="savebar" id="savebar"><span><b id="savebar-count">0</b> ta o'zgarish</span><button class="btn ghost sm" id="discard">Bekor qilish</button><button class="btn sm" id="save">Saqlash</button></div>
+<div class="toast" id="toast"></div>
+<script src="/assets/admin.js"></script>
+</body>
+</html>
