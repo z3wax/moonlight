@@ -156,3 +156,19 @@ deploy/deploy_hf.py     Hugging Face'ga yuklash
 ```
 
 Testlar: `pip install pytest && pytest -q`
+
+
+## Repozitoriy bo'yicha qo'llanma
+
+[PythonAnywhere](PYTHONANYWHERE.md) · [Muhit namunasi](.env.example) · [Testlar](tests/)
+
+**Repozitoriy egasi:** [z3wax](https://github.com/z3wax). Mavjud uchinchi tomon muallifligi va litsenziya bildirishnomalari saqlanadi.
+
+O'zgarish yuborish tartibi: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+### Muammoni yuborishda
+
+- Branch va commit SHA, operatsion tizim hamda runtime versiyasini ko'rsating.
+- Minimal qayta chiqarish qadamlari, kutilgan natija va amaldagi javobni yozing.
+- Token, cookie, parol, sessiya va shaxsiy ma'lumotlarni loglardan olib tashlang.
+- Benchmark natijasida qurilma, model/checkpoint, konfiguratsiya va o'lchov usulini kiriting.
