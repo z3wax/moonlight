@@ -1,3 +1,15 @@
+<!-- z3wax:presentation:start -->
+![Telegram AutoReply](docs/brand/banner.svg)
+
+[Loyiha xaritasi va misol](docs/PROJECT_GUIDE.md) · [Roadmap](ROADMAP.md) · [Baholash](docs/EVALUATION.md) · [Changelog](CHANGELOG.md) · [Relizlar](docs/RELEASING.md)
+
+[![Documentation](https://github.com/z3wax/moonlight/actions/workflows/documentation.yml/badge.svg)](https://github.com/z3wax/moonlight/actions/workflows/documentation.yml)
+
+**Tekshiruvlar:** [Documentation workflow](https://github.com/z3wax/moonlight/actions/workflows/documentation.yml) · Mavjud workflowlar: [deploy-hf-space.yml](https://github.com/z3wax/moonlight/actions/workflows/deploy-hf-space.yml)
+
+Hujjatlar CI holati dastur yoki model testlari holatidan alohida.
+<!-- z3wax:presentation:end -->
+
 # Telegram AutoReply + Admin panel
 
 Telegram akkauntingizni avtomatlashtiradi: siz yo'q paytda sizga yozganlarga
