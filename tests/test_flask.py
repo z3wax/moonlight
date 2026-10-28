@@ -163,3 +163,14 @@ def test_bridge_executes_and_reloads_settings(boot):
     assert bad["ok"] is False and "Noma'lum" in bad["error"]
     assert settings.api_id == 4242 and "reconfigure" in calls
     assert json.loads(store.get(STATUS_KEY))["telegram"] == {"state": "online"}
+
+
+def test_unicode_admin_login_returns_http_responses(boot):
+    boot.admin_username = "Юсуф"
+    app = create_app(boot)
+    app.testing = True
+    c = app.test_client()
+    assert c.post("/api/login", json={"username": "Бошқа", "password": "test-password-123"}).status_code == 401
+    response = c.post("/api/login", json={"username": "ЮСУФ", "password": "test-password-123"})
+    assert response.status_code == 200
+    assert c.get("/api/me").get_json()["username"] == "Юсуф"
