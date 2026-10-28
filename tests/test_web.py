@@ -128,3 +128,13 @@ def test_photo_upload_validates_type(settings, store, boot):
         r = c.post("/api/account/photo", files={"photo": ("a.txt", b"hello", "text/plain")}, headers=h)
         assert r.status_code == 400 and r.json()["error"] == "Faqat JPG yoki PNG"
         assert c.get("/api/account/photo").status_code == 404
+
+
+def test_unicode_admin_login_returns_http_responses(settings, store, boot):
+    boot.admin_username = "Юсуф"
+    ctx = make_ctx(settings, store, boot)
+    with client_for(ctx) as c:
+        assert c.post("/api/login", json={"username": "Бошқа", "password": "test-password-123"}).status_code == 401
+        response = c.post("/api/login", json={"username": "ЮСУФ", "password": "test-password-123"})
+        assert response.status_code == 200
+        assert c.get("/api/me").json()["username"] == "Юсуф"

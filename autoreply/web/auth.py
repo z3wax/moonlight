@@ -99,7 +99,11 @@ class Auth:
     def login(self, username: str, password: str, ip: str) -> AdminSession | None:
         if self.locked_for(ip):
             return None
-        ok_user = hmac.compare_digest(username.strip().lower(), self.username.lower())
+        # compare_digest's str overload only accepts ASCII. UTF-8 bytes keep
+        # the existing case-insensitive comparison valid for all usernames.
+        ok_user = hmac.compare_digest(
+            username.strip().lower().encode("utf-8"), self.username.lower().encode("utf-8")
+        )
         ok_pass = verify_password(password, self.store.get("admin_password_hash") or "")
         if not (ok_user and ok_pass):
             self._record_fail(ip)

@@ -64,3 +64,23 @@ def test_debt_detection():
     assert is_debt_topic("Qarzingizni qachon qaytarasiz?")
     assert is_debt_topic("Когда вернешь долг?")
     assert not is_debt_topic("Salom, ishlar qalay?")
+
+
+@pytest.mark.parametrize("username", ["Юсуф", "O‘g‘il"])
+def test_auth_accepts_case_insensitive_unicode_usernames(boot, store, username):
+    boot.admin_username = username
+    auth = Auth(store, boot)
+
+    session = auth.login(f"  {username.upper()}  ", "test-password-123", "1.1.1.1")
+
+    assert session is not None
+    assert auth.get(session.token) is not None
+    assert auth.username == username
+
+
+def test_unicode_login_attempts_follow_normal_lockout(boot, store):
+    auth = Auth(store, boot)
+    for _ in range(5):
+        assert auth.login("Бошқа", "test-password-123", "2.2.2.2") is None
+    assert auth.locked_for("2.2.2.2") > 0
+    assert auth.login("abu", "test-password-123", "2.2.2.2") is None
